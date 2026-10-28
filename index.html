@@ -309,9 +309,15 @@ select { width: 100%; padding: 12px; font-size: 15px; border-radius: 12px; borde
       $("power").textContent = "STOP"; $("power").classList.add("on");
       setStatus("Live. Tal nu. Brug høretelefoner for at undgå feedback.");
     } catch (e) {
-      setStatus(e && e.name === "NotAllowedError"
-        ? "Mikrofonen er blokeret. Tillad den i browserens indstillinger, og prøv igen."
-        : "Kunne ikke starte lyden. Åbn siden direkte i Safari eller Chrome og prøv igen.", true);
+      console.error(e);
+      var n = e && e.name, msg;
+      if (n === "NotAllowedError" || n === "SecurityError") msg = "Mikrofonen er blokeret. Klik på ikonet til venstre for adressen, tillad Mikrofon, og genindlæs siden.";
+      else if (n === "NotFoundError") msg = "Der blev ikke fundet nogen mikrofon. Tilslut en mikrofon eller et headset, og prøv igen.";
+      else if (n === "NotReadableError" || n === "AbortError") msg = "Mikrofonen bruges af et andet program (f.eks. Teams, Zoom eller Premiere). Luk det, og prøv igen.";
+      else if (n === "OverconstrainedError") { $("mic").value = ""; msg = "Den valgte mikrofon findes ikke længere. Vælg en anden, og prøv igen."; }
+      else msg = "Kunne ikke starte lyden (" + (n || "ukendt fejl") + ": " + (e && e.message || "") + ").";
+      setStatus(msg, true);
+      stopQuiet();
     }
   }
   async function listMics() {
@@ -344,6 +350,11 @@ select { width: 100%; padding: 12px; font-size: 15px; border-radius: 12px; borde
     graph = null; running = false; $("bar").style.width = "0%";
     $("power").textContent = "START"; $("power").classList.remove("on");
     setStatus("Stoppet. Tryk START for at tale igen.");
+  }
+  function stopQuiet() {
+    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    if (ctx) { try { ctx.close(); } catch (e) {} }
+    stream = null; ctx = null; graph = null; running = false;
   }
   $("power").addEventListener("click", function () { running ? stop() : start(); });
 })();
