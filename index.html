@@ -76,6 +76,8 @@ h2 { font-size: 17px; margin: 24px 0 10px; font-weight: 700; }
 .ctl output { color: var(--muted); font-variant-numeric: tabular-nums; }
 input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
 select { width: 100%; padding: 12px; font-size: 15px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+.chk { display:flex; gap:10px; align-items:flex-start; margin-top:10px; font-size:14px; color: var(--muted); }
+.chk input { margin-top:3px; }
 .tip {
   margin-top: 24px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line);
   border-radius: 14px; font-size: 14px; color: var(--muted);
@@ -96,6 +98,9 @@ select { width: 100%; padding: 12px; font-size: 15px; border-radius: 12px; borde
 
   <h2>Mikrofon</h2>
   <select id="mic" aria-label="Vælg mikrofon"><option value="">Standardmikrofon</option></select>
+  <label class="chk"><input type="checkbox" id="raw"> Rå mikrofon (slå iPhones ekkofjerning fra, hjælper ved headset)</label>
+  <label class="chk"><input type="checkbox" id="low"> Lav forsinkelse (halv buffer, lidt mere metallisk lyd)</label>
+  <div id="active" class="sub" style="margin-top:8px"></div>
 
   <h2>Stemme</h2>
   <div class="chips" id="chips"></div>
@@ -191,8 +196,8 @@ select { width: 100%; padding: 12px; font-size: 15px; border-radius: 12px; borde
   }
 
   /* Pitch shifter af to modulerede delay-linjer med crossfade */
-  function makePitchShifter(c) {
-    var BUF = 0.1, FADE = 0.05;
+  function makePitchShifter(c, low) {
+    var BUF = low ? 0.05 : 0.1, FADE = low ? 0.025 : 0.05;
     var input = c.createGain(), output = c.createGain();
     var len = Math.round(BUF * c.sampleRate);
 
@@ -234,7 +239,7 @@ select { width: 100%; padding: 12px; font-size: 15px; border-radius: 12px; borde
   /* ---------- Byg kæden ---------- */
   function build() {
     var hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 70;
-    var ps = makePitchShifter(ctx);
+    var ps = makePitchShifter(ctx, $("low").checked);
 
     // ringmodulator (knurren)
     var ringIn = ctx.createGain(), ringMul = ctx.createGain(); ringMul.gain.value = 0;
@@ -295,10 +300,22 @@ select { width: 100%; padding: 12px; font-size: 15px; border-radius: 12px; borde
         setStatus("Din browser kan ikke bruge mikrofonen her. Åbn siden direkte i Safari eller Chrome.", true); return;
       }
       var micId = $("mic").value;
-      var a = { echoCancellation: true, noiseSuppression: true, autoGainControl: false };
+      var raw = $("raw").checked;
+      var a = { echoCancellation: !raw, noiseSuppression: !raw, autoGainControl: false };
       if (micId) a.deviceId = { exact: micId };
       stream = await navigator.mediaDevices.getUserMedia({ audio: a });
-      listMics();
+      await listMics();
+      var tr = stream.getAudioTracks()[0], lbl = tr && tr.label ? tr.label : "ukendt";
+      $("active").textContent = "Bruger mikrofon: " + lbl;
+      var sel = $("mic");
+      if (!micId) {
+        var hs = Array.prototype.filter.call(sel.options, function (o) {
+          return o.value && /headset|headphone|hovedtelefon|wired|kablet|rode|røde|lavalier|usb|smallrig|wireless|receiver|s70|dji/i.test(o.textContent);
+        })[0];
+        if (hs && lbl !== hs.textContent && !/headset|headphone|hovedtelefon|wired|kablet|rode|røde|lavalier|usb|smallrig|wireless|receiver|s70|dji/i.test(lbl)) {
+          sel.value = hs.value; stopQuiet(); return start();
+        }
+      }
       keepAwake();
       var AC = window.AudioContext || window.webkitAudioContext;
       ctx = new AC({ latencyHint: "interactive" });
@@ -331,6 +348,8 @@ select { width: 100%; padding: 12px; font-size: 15px; border-radius: 12px; borde
       sel.value = cur;
     } catch (e) {}
   }
+  $("low").addEventListener("change", function () { if (running) { stop(); start(); } });
+  $("raw").addEventListener("change", function () { if (running) { stop(); start(); } });
   $("mic").addEventListener("change", function () { if (running) { stop(); start(); } });
 
   var wakeLock = null;
